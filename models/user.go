@@ -1,10 +1,9 @@
-package model
+package models
 
 import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type Role string
@@ -35,10 +34,10 @@ func NewUser() *User {
 	return &User{}
 }
 
-func (u *User) AddUser(db *gorm.DB) error {
-	return db.Save(&u).Error
-}
-
-func (u *User) GetUserByEmail(db *gorm.DB, email string) error {
-	return db.Table("users").Where("email= ?", email).First(&u).Error
-}
+// func (u *User) AddUser(db *gorm.DB) error {
+// 	return db.Save(&u).Error
+// }
+//
+// func (u *User) GetUserByEmail(db *gorm.DB, email string) error {
+// 	return db.Table("users").Where("email= ?", email).First(&u).Error
+// }

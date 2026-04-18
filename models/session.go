@@ -1,9 +1,7 @@
-package model
+package models
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type Session struct {
@@ -21,18 +19,18 @@ func NewSession() *Session {
 	return &Session{}
 }
 
-func (s *Session) CreateSession(db *gorm.DB) error {
-	return db.Create(&s).Error
-}
-
-func (s *Session) GetSession(db *gorm.DB) error {
-	return db.First(&s, "id = ?", s.ID).Error
-}
-
-func (s *Session) RevokeSession(db *gorm.DB) error {
-	return db.Table("sessions").Where("id = ?", s.ID).Update("is_revoked", true).Error
-}
-
-func (s *Session) DeleteSession(db *gorm.DB) error {
-	return db.Delete(&s).Error
-}
+// func (s *Session) CreateSession(db *gorm.DB) error {
+// 	return db.Create(&s).Error
+// }
+//
+// func (s *Session) GetSession(db *gorm.DB) error {
+// 	return db.First(&s, "id = ?", s.ID).Error
+// }
+//
+// func (s *Session) RevokeSession(db *gorm.DB) error {
+// 	return db.Table("sessions").Where("id = ?", s.ID).Update("is_revoked", true).Error
+// }
+//
+// func (s *Session) DeleteSession(db *gorm.DB) error {
+// 	return db.Delete(&s).Error
+// }

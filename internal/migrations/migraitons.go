@@ -4,11 +4,11 @@ import (
 	"log"
 
 	"github.com/risbern21/api_gateway/internal/database"
-	"github.com/risbern21/api_gateway/model"
+	"github.com/risbern21/api_gateway/models"
 )
 
 func AutoMigrate() {
-	if err := database.Client().AutoMigrate(&model.User{}, &model.Session{}); err != nil {
+	if err := database.Client().AutoMigrate(&models.User{}, &models.Session{}); err != nil {
 		log.Fatalf("unable to migrate %v", err)
 	}
 }

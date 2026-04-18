@@ -7,23 +7,32 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/risbern21/api_gateway/internal/database"
 	"github.com/risbern21/api_gateway/internal/token"
 	"github.com/risbern21/api_gateway/internal/validate"
-	"github.com/risbern21/api_gateway/model"
+	"github.com/risbern21/api_gateway/models"
+	"github.com/risbern21/api_gateway/store"
 	"github.com/risbern21/api_gateway/util"
 	"gorm.io/gorm"
 )
 
+type Storer interface {
+	AddUser(u *models.User) error
+	GetUserByEmail(u *models.User, email string) error
+	CreateSession(s *models.Session) error
+	GetSession(s *models.Session) error
+	RevokeSession(s *models.Session) error
+	DeleteSession(s *models.Session) error
+}
+
 type Handler struct {
-	db         *gorm.DB
 	tokenMaker *token.JWTMaker
+	s          Storer
 }
 
 func NewHandler(secretKey string) *Handler {
 	return &Handler{
-		db:         database.Client(),
 		tokenMaker: token.NewJWTMaker(secretKey),
+		s:          store.NewPGStore(),
 	}
 }
 
@@ -50,15 +59,15 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m := model.NewUser()
+	m := models.NewUser()
 	m.Username = u.Username
 	m.Email = u.Email
 	m.Password = password
-	m.Role = model.Role(u.Role)
+	m.Role = models.Role(u.Role)
 	m.Phone = u.Phone
 	m.Address = u.Address
 
-	if err := m.AddUser(h.db); err != nil {
+	if err := h.s.AddUser(m); err != nil {
 		http.Error(w, "error creating user", http.StatusInternalServerError)
 		return
 	}
@@ -89,8 +98,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := model.NewUser()
-	err := u.GetUserByEmail(h.db, req.Email)
+	u := models.NewUser()
+	err := h.s.GetUserByEmail(u, req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "error user not found", http.StatusNotFound)
@@ -118,14 +127,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := model.NewSession()
+	s := models.NewSession()
 	s.ID = refreshTokenClaims.RegisteredClaims.ID
 	s.UserEmail = u.Email
 	s.RefreshToken = refreshToken
 	s.IsRevoked = false
 	s.ExpiresAt = refreshTokenClaims.ExpiresAt.Time
 
-	if err := s.CreateSession(h.db); err != nil {
+	if err := h.s.CreateSession(s); err != nil {
 		http.Error(w, "error unable to create session", http.StatusInternalServerError)
 		return
 	}
@@ -152,10 +161,10 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := model.NewSession()
+	s := models.NewSession()
 	s.ID = id
 
-	if err := s.GetSession(h.db); err != nil {
+	if err := h.s.GetSession(s); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "error session not found", http.StatusNotFound)
 			return
@@ -164,7 +173,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.DeleteSession(h.db); err != nil {
+	if err := h.s.DeleteSession(s); err != nil {
 		http.Error(w, "unable to delete session", http.StatusInternalServerError)
 		return
 	}
@@ -190,9 +199,9 @@ func (h *Handler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := model.NewSession()
+	s := models.NewSession()
 	s.ID = refreshTokenClaims.RegisteredClaims.ID
-	if err := s.GetSession(h.db); err != nil {
+	if err := h.s.GetSession(s); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "error session not found", http.StatusNotFound)
 			return
@@ -235,9 +244,9 @@ func (h *Handler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := model.NewSession()
+	s := models.NewSession()
 	s.ID = id
-	if err := s.GetSession(h.db); err != nil {
+	if err := h.s.GetSession(s); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "error unable to find session", http.StatusNotFound)
 			return
@@ -246,7 +255,7 @@ func (h *Handler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.RevokeSession(h.db); err != nil {
+	if err := h.s.RevokeSession(s); err != nil {
 		http.Error(w, "unable to revoke session", http.StatusInternalServerError)
 		return
 	}

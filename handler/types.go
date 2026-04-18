@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/risbern21/api_gateway/model"
+	"github.com/risbern21/api_gateway/models"
 )
 
 type SigninRequest struct {
@@ -31,12 +31,12 @@ type LoginReq struct {
 }
 
 type LoginRes struct {
-	SessionID             string     `json:"session_id"`
-	AccessToken           string     `json:"access_token"`
-	AccessTokenExpiresAt  time.Time  `json:"access_token_expires_at"`
-	RefreshToken          string     `json:"refresh_token"`
-	RefreshTokenExpiresAt time.Time  `json:"refresh_token_expires_at"`
-	User                  model.User `json:"user"`
+	SessionID             string      `json:"session_id"`
+	AccessToken           string      `json:"access_token"`
+	AccessTokenExpiresAt  time.Time   `json:"access_token_expires_at"`
+	RefreshToken          string      `json:"refresh_token"`
+	RefreshTokenExpiresAt time.Time   `json:"refresh_token_expires_at"`
+	User                  models.User `json:"user"`
 }
 
 type RenewAccessTokenReq struct {
