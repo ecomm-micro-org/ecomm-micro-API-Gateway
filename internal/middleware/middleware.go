@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/risbern21/api_gateway/internal/cache"
 	"github.com/risbern21/api_gateway/internal/logger"
 	"github.com/risbern21/api_gateway/internal/token"
@@ -23,11 +24,13 @@ type ResponseRecorder struct {
 
 type Middleware struct {
 	maker token.JWTMaker
+	cache *redis.Client
 }
 
 func NewMiddleware(secretKey string) *Middleware {
 	return &Middleware{
 		maker: *token.NewJWTMaker(secretKey),
+		cache: cache.Client(),
 	}
 }
 
@@ -77,7 +80,7 @@ func (m *Middleware) RateLimitingMiddleware(next http.Handler) http.Handler {
 		}
 
 		ctx := context.Background()
-		count, _ := cache.Client().Incr(ctx, ip).Result()
+		count, _ := m.cache.Incr(ctx, ip).Result()
 		if count == 1 {
 			cache.Client().Expire(ctx, ip, 15*time.Second)
 		}
@@ -116,7 +119,7 @@ func (m *Middleware) CachingMiddleware(next http.Handler) http.Handler {
 		key := constructKey(r.Method, r.URL.Path)
 
 		ctx := context.Background()
-		content, err := cache.Client().Get(ctx, key).Result()
+		content, err := m.cache.Get(ctx, key).Result()
 
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -133,7 +136,7 @@ func (m *Middleware) CachingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 
 		if rec.statusCode == http.StatusOK && rec.body.Len() > 0 {
-			err := cache.Client().Set(ctx, key, rec.body.String(), 60*time.Second).Err()
+			err := m.cache.Set(ctx, key, rec.body.String(), 60*time.Second).Err()
 			if err != nil {
 				logger.Log().Info("unable to cache the key")
 			}

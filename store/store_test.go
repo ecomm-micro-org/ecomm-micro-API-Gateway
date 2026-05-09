@@ -1,4 +1,4 @@
-package models
+package store
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/risbern21/api_gateway/internal/database"
+	"github.com/risbern21/api_gateway/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -18,7 +19,7 @@ import (
 func TestMain(m *testing.M) {
 	database.Setup()
 	database.Client().Logger.LogMode(0)
-	err := database.Client().AutoMigrate(&User{}, &Session{})
+	err := database.Client().AutoMigrate(&models.User{}, &models.Session{})
 	if err != nil {
 		log.Fatal("unable to automigrate")
 	}
@@ -29,20 +30,20 @@ func TestMain(m *testing.M) {
 
 // newTestUser returns a fully populated User with randomised unique fields.
 // It does NOT persist anything — callers decide whether to save it.
-func newTestUser() *User {
+func newTestUser() *models.User {
 	n := rand.Intn(1_000_000)
-	return &User{
+	return &models.User{
 		Username: fmt.Sprintf("testuser_%d", n),
 		Email:    fmt.Sprintf("testuser_%d@example.com", n),
 		Password: "hashed_password",
-		Role:     Buyer,
+		Role:     models.Buyer,
 		Address:  "123 Test Street",
 		Phone:    "5550001234",
 	}
 }
 
-func newTestSession() *Session {
-	return &Session{
+func newTestSession() *models.Session {
+	return &models.Session{
 		ID:           uuid.NewString(),
 		UserEmail:    "test@example.com",
 		RefreshToken: "refresh_token",
@@ -51,18 +52,35 @@ func newTestSession() *Session {
 	}
 }
 
+type Storer interface {
+	AddUser(u *models.User) error
+	GetUserByEmail(u *models.User, email string) error
+	CreateSession(s *models.Session) error
+	GetSession(s *models.Session) error
+	RevokeSession(s *models.Session) error
+	DeleteSession(s *models.Session) error
+}
+
+func newTestStore() Storer {
+	return &PGStore{
+		db: database.Client(),
+	}
+}
+
 // seedUser persists a user and fails the test immediately on any error.
-func seedUser(t *testing.T, db *gorm.DB) *User {
+func seedUser(t *testing.T, db *gorm.DB) *models.User {
 	t.Helper()
 	u := newTestUser()
-	require.NoError(t, u.AddUser(db), "seeding user must not fail")
+	store := newTestStore()
+	require.NoError(t, store.AddUser(u), "seeding user must not fail")
 	return u
 }
 
-func seedSession(t *testing.T, db *gorm.DB) *Session {
+func seedSession(t *testing.T, db *gorm.DB) *models.Session {
 	t.Helper()
 	s := newTestSession()
-	require.NoError(t, s.CreateSession(db), "seeding session must not fail")
+	store := newTestStore()
+	require.NoError(t, store.CreateSession(s), "seeding session must not fail")
 	return s
 }
 
@@ -71,51 +89,51 @@ func TestAddUser(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		build       func(t *testing.T) *User
+		build       func(t *testing.T) *models.User
 		expectError bool
-		validate    func(t *testing.T, u *User)
+		validate    func(t *testing.T, u *models.User)
 	}{
 		{
 			name: "persists a valid user and populates ID",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				return newTestUser()
 			},
 			expectError: false,
-			validate: func(t *testing.T, u *User) {
+			validate: func(t *testing.T, u *models.User) {
 				assert.NotEqual(t, uuid.UUID{}, u.ID, "database must assign a non-zero UUID")
 			},
 		},
 		{
 			name: "persists buyer role correctly",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				u := newTestUser()
-				u.Role = Buyer
+				u.Role = models.Buyer
 				return u
 			},
 			expectError: false,
-			validate: func(t *testing.T, u *User) {
-				fetched := &User{}
+			validate: func(t *testing.T, u *models.User) {
+				fetched := &models.User{}
 				require.NoError(t, db.First(fetched, "id = ?", u.ID).Error)
-				assert.Equal(t, Buyer, fetched.Role)
+				assert.Equal(t, models.Buyer, fetched.Role)
 			},
 		},
 		{
 			name: "persists seller role correctly",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				u := newTestUser()
-				u.Role = Seller
+				u.Role = models.Seller
 				return u
 			},
 			expectError: false,
-			validate: func(t *testing.T, u *User) {
-				fetched := &User{}
+			validate: func(t *testing.T, u *models.User) {
+				fetched := &models.User{}
 				require.NoError(t, db.First(fetched, "id = ?", u.ID).Error)
-				assert.Equal(t, Seller, fetched.Role)
+				assert.Equal(t, models.Seller, fetched.Role)
 			},
 		},
 		{
 			name: "returns error when username is already taken (unique constraint)",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				existing := seedUser(t, db)
 
 				duplicate := newTestUser()
@@ -126,7 +144,7 @@ func TestAddUser(t *testing.T) {
 		},
 		{
 			name: "returns error when email is already taken (unique constraint)",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				existing := seedUser(t, db)
 
 				duplicate := newTestUser()
@@ -137,15 +155,15 @@ func TestAddUser(t *testing.T) {
 		},
 		{
 			name: "all supplied fields are stored and retrieved correctly",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				u := newTestUser()
 				u.Address = "42 Elm St, Springfield"
 				u.Phone = "9998887777"
 				return u
 			},
 			expectError: false,
-			validate: func(t *testing.T, u *User) {
-				fetched := &User{}
+			validate: func(t *testing.T, u *models.User) {
+				fetched := &models.User{}
 				require.NoError(t, db.First(fetched, "id = ?", u.ID).Error)
 				assert.Equal(t, u.Username, fetched.Username)
 				assert.Equal(t, u.Email, fetched.Email)
@@ -156,12 +174,12 @@ func TestAddUser(t *testing.T) {
 		},
 		{
 			name: "CreatedAt and UpdatedAt are populated by the database",
-			build: func(t *testing.T) *User {
+			build: func(t *testing.T) *models.User {
 				return newTestUser()
 			},
 			expectError: false,
-			validate: func(t *testing.T, u *User) {
-				fetched := &User{}
+			validate: func(t *testing.T, u *models.User) {
+				fetched := &models.User{}
 				require.NoError(t, db.First(fetched, "id = ?", u.ID).Error)
 				assert.False(t, fetched.CreatedAt.IsZero(), "CreatedAt must be set")
 				assert.False(t, fetched.UpdatedAt.IsZero(), "UpdatedAt must be set")
@@ -169,10 +187,12 @@ func TestAddUser(t *testing.T) {
 		},
 	}
 
+	store := NewPGStore()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			u := tt.build(t)
-			err := u.AddUser(db)
+			err := store.AddUser(u)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -192,18 +212,18 @@ func TestGetUserByEmail(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setup       func(t *testing.T) (email string, seeded *User)
+		setup       func(t *testing.T) (email string, seeded *models.User)
 		expectError bool
-		validate    func(t *testing.T, fetched *User, seeded *User)
+		validate    func(t *testing.T, fetched *models.User, seeded *models.User)
 	}{
 		{
 			name: "returns the correct user for a known email",
-			setup: func(t *testing.T) (string, *User) {
+			setup: func(t *testing.T) (string, *models.User) {
 				u := seedUser(t, db)
 				return u.Email, u
 			},
 			expectError: false,
-			validate: func(t *testing.T, fetched *User, seeded *User) {
+			validate: func(t *testing.T, fetched *models.User, seeded *models.User) {
 				assert.Equal(t, seeded.ID, fetched.ID)
 				assert.Equal(t, seeded.Email, fetched.Email)
 				assert.Equal(t, seeded.Username, fetched.Username)
@@ -211,12 +231,12 @@ func TestGetUserByEmail(t *testing.T) {
 		},
 		{
 			name: "returns all fields for a known email",
-			setup: func(t *testing.T) (string, *User) {
+			setup: func(t *testing.T) (string, *models.User) {
 				u := seedUser(t, db)
 				return u.Email, u
 			},
 			expectError: false,
-			validate: func(t *testing.T, fetched *User, seeded *User) {
+			validate: func(t *testing.T, fetched *models.User, seeded *models.User) {
 				assert.Equal(t, seeded.Password, fetched.Password)
 				assert.Equal(t, seeded.Role, fetched.Role)
 				assert.Equal(t, seeded.Address, fetched.Address)
@@ -225,20 +245,20 @@ func TestGetUserByEmail(t *testing.T) {
 		},
 		{
 			name: "returns gorm.ErrRecordNotFound for a non-existent email",
-			setup: func(t *testing.T) (string, *User) {
+			setup: func(t *testing.T) (string, *models.User) {
 				return "does_not_exist@example.com", nil
 			},
 			expectError: true,
-			validate: func(t *testing.T, fetched *User, _ *User) {
+			validate: func(t *testing.T, fetched *models.User, _ *models.User) {
 				// callers in handler.go check for gorm.ErrRecordNotFound specifically
-				u := NewUser()
+				u := models.NewUser()
 				err := u.GetUserByEmail(db, "does_not_exist@example.com")
 				assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 			},
 		},
 		{
 			name: "lookup is case-sensitive — upper-cased email does not match",
-			setup: func(t *testing.T) (string, *User) {
+			setup: func(t *testing.T) (string, *models.User) {
 				u := seedUser(t, db)
 				// PostgreSQL text comparison is case-sensitive by default
 				return fmt.Sprintf("%s_UPPER", u.Email), nil

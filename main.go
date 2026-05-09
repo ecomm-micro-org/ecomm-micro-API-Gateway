@@ -12,6 +12,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/hudl/fargo"
+	"github.com/op/go-logging"
+	_ "github.com/risbern21/api_gateway/docs"
 	"github.com/risbern21/api_gateway/internal/cache"
 	"github.com/risbern21/api_gateway/internal/database"
 	"github.com/risbern21/api_gateway/internal/logger"
@@ -19,6 +21,20 @@ import (
 	"github.com/risbern21/api_gateway/routes"
 )
 
+// @title API gateway
+// @version 1.0
+// @description This is an API gateway for ecomm micro project
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:6969
+// @BasePath /
 func main() {
 	logger.InitLogger()
 	database.Setup()
@@ -38,6 +54,16 @@ func createServer() *http.Server {
 	if port == "" {
 		port = ":6969"
 	}
+
+	f, err := os.OpenFile("/tmp/asi-gateway-eureka.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0664)
+	if err != nil {
+		log.Fatalf("unable to open log file /tmp/asi-gateway-eureka.log")
+	}
+	defer f.Close()
+
+	backend := logging.NewLogBackend(f, "", 0)
+	logging.SetBackend(backend)
+
 	serviceRegistry := os.Getenv("SERVICE_REGISTRY")
 	eurekaHostname := os.Getenv("EUREKA_HOSTNAME")
 	if serviceRegistry == "" || eurekaHostname == "" {
@@ -65,12 +91,13 @@ func createServer() *http.Server {
 	}
 
 	// Register with Eureka
-	err := c.RegisterInstance(&instance)
+	err = c.RegisterInstance(&instance)
 	if err != nil {
 		log.Fatal("Failed to register:", err)
 	}
 
-	go heartBeat(c, instance)
+	l := logging.MustGetLogger("products")
+	go heartBeat(c, instance, l)
 
 	mux := mux.NewRouter()
 
@@ -119,13 +146,13 @@ func runServer(ctx context.Context, server *http.Server, shutdownTimeout time.Du
 	return nil
 }
 
-func heartBeat(conn fargo.EurekaConnection, instance fargo.Instance) {
+func heartBeat(conn fargo.EurekaConnection, instance fargo.Instance, l *logging.Logger) {
 	for {
 		err := conn.HeartBeatInstance(&instance)
 		if err != nil {
-			log.Println("Heartbeat failed:", err)
+			l.Errorf("Heartbeat failed:", err)
 		} else {
-			log.Println("Heartbeat sent")
+			l.Info("Heartbeat sent")
 		}
 
 		time.Sleep(30 * time.Second)

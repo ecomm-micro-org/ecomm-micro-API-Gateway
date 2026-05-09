@@ -15,6 +15,7 @@ import (
 	"github.com/risbern21/api_gateway/handler"
 	"github.com/risbern21/api_gateway/internal/logger"
 	"github.com/risbern21/api_gateway/internal/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
 const (
@@ -34,7 +35,18 @@ func AddRoutes(r *mux.Router, serviceRegistry string) {
 	m := middleware.NewMiddleware(secretKey)
 
 	r.Use(m.LoggingMiddleware)
+
+	//health endpoint
 	r.HandleFunc("/api/health", h.Health)
+
+	//api doc endpoint
+	r.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
+		httpSwagger.URL("http://localhost:6969/swagger/doc.json"), //The url pointing to API definition
+		httpSwagger.DeepLinking(true),
+		httpSwagger.DocExpansion("none"),
+		httpSwagger.DomID("swagger-ui"),
+	)).Methods(http.MethodGet)
+
 	r.HandleFunc("/api/auth/signin", h.CreateUser).Methods(POST)
 	r.HandleFunc("/api/auth/login", h.Login).Methods(POST)
 	r.HandleFunc("/api/auth/logout", h.Logout).Methods(POST)
@@ -74,6 +86,7 @@ func getServiceURL(conn fargo.EurekaConnection, serviceName string) (string, err
 	if err != nil || len(app.Instances) == 0 {
 		return "", fmt.Errorf("no instances for %s", serviceName)
 	}
+
 	instance := app.Instances[rand.Intn(len(app.Instances))]
 	return fmt.Sprintf("http://%s:%d", instance.HostName, instance.Port), nil
 }

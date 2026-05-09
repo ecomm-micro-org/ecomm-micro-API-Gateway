@@ -27,19 +27,43 @@ type Storer interface {
 type Handler struct {
 	tokenMaker *token.JWTMaker
 	s          Storer
+	validator  *validate.StructValidator
 }
 
 func NewHandler(secretKey string) *Handler {
 	return &Handler{
 		tokenMaker: token.NewJWTMaker(secretKey),
 		s:          store.NewPGStore(),
+		validator:  validate.New(),
 	}
 }
 
+// Health API health endpoint
+//
+//	@Summary      Health
+//	@Description  Health endpoint
+//	@Tags         health
+//	@Produce      json
+//	@Success      200  {string} string "OK"
+//	@Router       /health [get]
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// CreateUser Creates a new user
+//
+//	@Summary      Create user
+//	@Description  Creates a new user
+//	@Tags         auth
+//	@Accept       json
+//	@Produce      json
+//	@Param        user    body   SigninRequest  true "user details"
+//	@Success      201  {object}  SigninResponse
+//	@Failure      400  {string}  string
+//	@Failure      401  {string}  string
+//	@Failure      500  {string}  string
+//	@Security     BearerAuth
+//	@Router       /api/auth/signin [post]
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	u := &SigninRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
@@ -47,8 +71,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validator := validate.New()
-	if err := validator.Validator.Struct(u); err != nil {
+	if err := h.validator.Validator.Struct(u); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -85,6 +108,20 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(&res)
 }
 
+// Login Login
+//
+//	@Summary      Login
+//	@Description  Login
+//	@Tags         auth
+//	@Accept       json
+//	@Produce      json
+//	@Param        user    body   LoginReq  true "user details"
+//	@Success      200  {object}  LoginRes
+//	@Failure      400  {string}  string
+//	@Failure      404  {string}  string
+//	@Failure      500  {string}  string
+//	@Security     BearerAuth
+//	@Router       /api/auth/login [post]
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	req := &LoginReq{}
 
@@ -93,7 +130,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validate.New().Validator.Struct(req); err != nil {
+	if err := h.validator.Validator.Struct(req); err != nil {
 		http.Error(w, "error invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -153,6 +190,20 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// Logout Logout
+//
+//	@Summary      Logout
+//	@Description  Logout
+//	@Tags         auth
+//	@Produce      json
+//	@Param        id    query     string  true "session id"
+//	@Success      204  {string}  string "No Content"
+//	@Failure      400  {string}  string
+//	@Failure      401  {string}  string
+//	@Failure      404  {string}  string
+//	@Failure      500  {string}  string
+//	@Security     BearerAuth
+//	@Router       /add [post]
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	id := query["id"][0]
@@ -188,7 +239,7 @@ func (h *Handler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validate.New().Validator.Struct(req); err != nil {
+	if err := h.validator.Validator.Struct(req); err != nil {
 		http.Error(w, "error invalid request body", http.StatusBadRequest)
 		return
 	}
